@@ -4,6 +4,7 @@ import { auth } from "@clerk/nextjs/server";
 import { Dumbbell } from "lucide-react";
 import { db } from "@/lib/db";
 import { chats } from "@/lib/db/schema";
+import { eq } from "drizzle-orm";
 import ChatSideBar from "@/components/ChatSideBar";
 type Props = { params: { chatId: string } };
 
@@ -14,10 +15,9 @@ const ChatPage = async ({ params: { chatId } }: Props) => {
   }
 
   // Get all chats for this user
-  const _chats = await db.select().from(chats);
-  const userChats = _chats.filter((chat) => chat.userId === userId);
+  const _chats = await db.select().from(chats).where(eq(chats.userId, userId));
 
-  if (!userId) {
+  if (!_chats) {
     return redirect("/");
   }
 
