@@ -6,9 +6,16 @@ import { db } from "@/lib/db";
 import { chats } from "@/lib/db/schema";
 import { eq } from "drizzle-orm";
 import ChatSideBar from "@/components/ChatSideBar";
-type Props = { params: { chatId: string } };
+import PDFViewer from "@/components/PDFViewer";
 
-const ChatPage = async ({ params: { chatId } }: Props) => {
+type Props = {
+  params: { chatId: string };
+};
+
+const ChatPage = async ({ params }: Props) => {
+  // Await the params to fix the error
+  const chatId = params.chatId;
+
   const { userId } = await auth();
   if (!userId) {
     redirect("/sign-in");
@@ -28,6 +35,8 @@ const ChatPage = async ({ params: { chatId } }: Props) => {
     return redirect("/");
   }
 
+  const currentChat = _chats.find((chat) => chat.id === parseInt(chatId));
+
   return (
     <div className="flex max-h-screen overflow-scroll">
       <div className="flex w-full max-h-screen overflow-scroll">
@@ -37,7 +46,7 @@ const ChatPage = async ({ params: { chatId } }: Props) => {
         </div>
         {/*pdf viewer */}
         <div className="max-h-screen p-4 overflow-scroll flex-[5]">
-          {/*PDFViewer*/}
+          <PDFViewer pdf_url={currentChat?.pdfUrl || ""} />
         </div>
         {/*chat component */}
         <div className="flex-[3] border-l-4 border-l-slate-200">
