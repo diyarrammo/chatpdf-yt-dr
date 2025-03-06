@@ -1,8 +1,4 @@
-import {
-  Pinecone,
-  Vector,
-  utils as PineconeUtils,
-} from "@pinecone-database/pinecone";
+import { Pinecone } from "@pinecone-database/pinecone";
 import downloadFromS3 from "@/lib/s3-server";
 import { PDFLoader } from "@langchain/community/document_loaders/fs/pdf";
 import { Document } from "@langchain/core/documents";
@@ -33,7 +29,6 @@ type PDFPage = {
 
 export async function loadS3IntoPinecone(fileKey: string) {
   // 1. obtain the pdf --> download and read from PDF
-  console.log("Downloading from S3 into file system");
   const file_name = await downloadFromS3(fileKey);
   if (!file_name) {
     throw new Error("Failed to download from S3");
@@ -52,21 +47,40 @@ export async function loadS3IntoPinecone(fileKey: string) {
   if (!client) throw new Error("Failed to initialize Pinecone client");
 
   const pineconeIndex = client.Index("chatpdf-yt");
-  console.log("upserting vectors into pinecone");
-
   const namespace = convertToAscii(fileKey);
 
   // Batch upsert vectors
   const batchSize = 10;
   for (let i = 0; i < vectors.length; i += batchSize) {
     const batch = vectors.slice(i, i + batchSize);
-    await pineconeIndex.upsert(
-      batch.map((vector) => ({
-        id: vector.id,
-        values: vector.values,
-        metadata: vector.metadata,
-      }))
+    const upsertPayload = batch.map(
+      (vector: { id: string; values: number[]; metadata: any }) => {
+        const payload = {
+          id: vector.id,
+          values: vector.values,
+          metadata: {
+            text: vector.metadata.text,
+            pageNumber: vector.metadata.pageNumber,
+            namespace: namespace,
+          },
+        };
+        return payload;
+      }
     );
+    // Add namespace to each vector's metadata
+    const vectorsWithNamespace = upsertPayload.map((vector) => ({
+      ...vector,
+      metadata: {
+        ...vector.metadata,
+        namespace: namespace,
+      },
+    }));
+    try {
+      await pineconeIndex.upsert(vectorsWithNamespace);
+    } catch (error) {
+      console.error("Error upserting to Pinecone:", error);
+      throw error;
+    }
   }
 
   return documments[0];
@@ -76,14 +90,16 @@ async function embedDocuments(doc: Document) {
   try {
     const embeddings = await getEmbeddings(doc.pageContent);
     const hash = md5(doc.pageContent);
+    const metadata = {
+      text: doc.metadata.text,
+      pageNumber: doc.metadata.pageNumber,
+    };
+
     return {
       id: hash,
       values: embeddings,
-      metadata: {
-        text: doc.metadata.text,
-        pageNumber: doc.metadata.loc.pageNumber,
-      },
-    } as Vector;
+      metadata,
+    };
   } catch (error) {
     console.error("error embedding documents", error);
     throw error;
@@ -96,7 +112,9 @@ export const truncateStringByBytes = (str: string, bytes: number) => {
 
 async function prepareDocument(page: PDFPage) {
   let { pageContent, metadata } = page;
-  pageContent = pageContent.replace(/\n/g, "");
+  // Remove newlines but keep spaces for better readability
+  pageContent = pageContent.replace(/\n/g, " ");
+
   // split the docs
   const splitter = new RecursiveCharacterTextSplitter({
     chunkSize: 1000,
@@ -111,5 +129,6 @@ async function prepareDocument(page: PDFPage) {
       },
     }),
   ]);
+
   return docs;
 }
