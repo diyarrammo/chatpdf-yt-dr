@@ -6,12 +6,15 @@ import { db } from "@/lib/db";
 import { eq } from "drizzle-orm";
 import { userSubscription } from "@/lib/db/schema";
 import { NextResponse } from "next/server";
-const return_url = process.env.NEXT_BASE_URL + "/";
+
+// Ensure we have a valid base URL, defaulting to localhost if not set
+const baseUrl = process.env.NEXT_BASE_URL || "http://localhost:3000";
+const return_url = `${baseUrl}/`;
 
 export async function GET(req: Request) {
   try {
     const { userId } = await auth();
-    const user = currentUser();
+    const user = await currentUser();
 
     if (!userId) {
       return new Response("Unauthorized", { status: 401 });
@@ -55,6 +58,12 @@ export async function GET(req: Request) {
           quantity: 1,
         },
       ],
+      metadata: { UserId: userId },
     });
-  } catch (error) {}
+
+    return NextResponse.json({ url: stripeSession.url });
+  } catch (error) {
+    console.log("[STRIPE_CHECKOUT]", error);
+    return new Response("Internal Error", { status: 500 });
+  }
 }
